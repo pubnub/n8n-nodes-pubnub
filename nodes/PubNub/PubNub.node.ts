@@ -11,7 +11,7 @@ export class PubNub implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'PubNub',
 		name: 'pubNub',
-		icon: 'file:pubnub.svg',
+		icon: 'file:PubNub.svg',
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["resource"] + ": " + $parameter["operation"]}}',

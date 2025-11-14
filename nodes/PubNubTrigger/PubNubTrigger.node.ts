@@ -11,7 +11,7 @@ export class PubNubTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'PubNub Trigger',
 		name: 'pubNubTrigger',
-		icon: 'file:pubnub.svg',
+		icon: 'file:PubNubTrigger.svg',
 		group: ['trigger'],
 		version: 1,
 		description: 'Starts the workflow when PubNub messages are received',
