@@ -496,6 +496,7 @@ export class PubNub implements INodeType {
 		try {
 			for (let i = 0; i < items.length; i++) {
 				try {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					let responseData: any = {};
 
 					// ========================================
@@ -506,6 +507,7 @@ export class PubNub implements INodeType {
 
 						if (operation === 'publish') {
 							const message = this.getNodeParameter('message', i);
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
 							const options = this.getNodeParameter('publishOptions', i, {}) as any;
 
 							responseData = await pubnub.publish({
@@ -532,6 +534,7 @@ export class PubNub implements INodeType {
 						const channel = this.getNodeParameter('channel', i) as string;
 
 						if (operation === 'fetchMessages') {
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
 							const options = this.getNodeParameter('historyOptions', i, {}) as any;
 
 							responseData = await pubnub.fetchMessages({
@@ -559,6 +562,7 @@ export class PubNub implements INodeType {
 					else if (resource === 'presence') {
 						if (operation === 'hereNow') {
 							const channelsStr = this.getNodeParameter('channels', i, '') as string;
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
 							const options = this.getNodeParameter('presenceOptions', i, {}) as any;
 							const channels = channelsStr ? channelsStr.split(',').map((c) => c.trim()) : [];
 

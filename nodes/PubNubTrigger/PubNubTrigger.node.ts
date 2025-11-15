@@ -120,6 +120,7 @@ export class PubNubTrigger implements INodeType {
 		const triggerOn = this.getNodeParameter('triggerOn') as string;
 		const channelsStr = this.getNodeParameter('channels') as string;
 		const channelGroupsStr = this.getNodeParameter('channelGroups', '') as string;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const options = this.getNodeParameter('options', {}) as any;
 
 		// Parse channels and channel groups
@@ -151,6 +152,7 @@ export class PubNubTrigger implements INodeType {
 		});
 
 		// Create subscription options
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const subscribeParams: any = {
 			channels: channels.length > 0 ? channels : undefined,
 			channelGroups: channelGroups.length > 0 ? channelGroups : undefined,
@@ -162,10 +164,12 @@ export class PubNubTrigger implements INodeType {
 		}
 
 		// Message listener
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const listener: any = {};
 
 		// Handle messages
 		if (triggerOn === 'message' || triggerOn === 'both') {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			listener.message = (messageEvent: any) => {
 				const workflowData = [
 					this.helpers.returnJsonArray({
@@ -187,6 +191,7 @@ export class PubNubTrigger implements INodeType {
 			};
 
 			// Handle signals (similar to messages but lighter)
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			listener.signal = (signalEvent: any) => {
 				const workflowData = [
 					this.helpers.returnJsonArray({
@@ -203,6 +208,7 @@ export class PubNubTrigger implements INodeType {
 
 			// Handle message actions
 			if (options.includeMessageActions) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				listener.messageAction = (actionEvent: any) => {
 					const workflowData = [
 						this.helpers.returnJsonArray({
@@ -218,6 +224,7 @@ export class PubNubTrigger implements INodeType {
 
 		// Handle presence events
 		if (triggerOn === 'presence' || triggerOn === 'both' || options.withPresence) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			listener.presence = (presenceEvent: any) => {
 				const workflowData = [
 					this.helpers.returnJsonArray({
@@ -237,6 +244,7 @@ export class PubNubTrigger implements INodeType {
 		}
 
 		// Handle status events (connection, errors, etc.)
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		listener.status = (statusEvent: any) => {
 			const category = statusEvent.category;
 
@@ -260,7 +268,7 @@ export class PubNubTrigger implements INodeType {
 
 		// Apply filter expression if provided
 		if (options.filterExpression) {
-			pubnub.setFilterExpression(options.filterExpression);
+			pubnub.setFilterExpression(options.filterExpression as string);
 		}
 
 		// Subscribe to channels
@@ -274,6 +282,7 @@ export class PubNubTrigger implements INodeType {
 				}, 30000); // Wait up to 30 seconds for a message
 
 				const tempListener = {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					message: (messageEvent: any) => {
 						clearTimeout(timeout);
 						const workflowData = [
