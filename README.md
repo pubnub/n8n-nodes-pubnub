@@ -123,7 +123,7 @@ To develop or modify this package:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/n8n-nodes-pubnub.git
+git clone https://github.com/stephenlb/n8n-nodes-pubnub.git
 cd n8n-nodes-pubnub
 
 # Install dependencies
@@ -161,7 +161,7 @@ If you encounter issues or have questions:
 
 1. Check the [PubNub Documentation](https://www.pubnub.com/docs/)
 2. Visit the [n8n Community Forum](https://community.n8n.io/)
-3. Open an issue on [GitHub](https://github.com/your-username/n8n-nodes-pubnub/issues)
+3. Open an issue on [GitHub](https://github.com/stephenlb/n8n-nodes-pubnub/issues)
 
 ## Contributing
 

@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-pubnub",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "description": "n8n node for PubNub real-time messaging platform",
     "keywords": [
         "n8n-community-node-package",
@@ -14,13 +14,12 @@
     "homepage": "https://github.com/stephenlb/n8n-nodes-pubnub",
     "author": {
         "name": "Stephen Blum",
-        "email": "stephen@pubnub.com.com"
+        "email": "stephen@pubnub.com"
     },
     "repository": {
         "type": "git",
         "url": "git+https://github.com/stephenlb/n8n-nodes-pubnub.git"
     },
-    "main": "index.js",
     "scripts": {
         "build": "tsc && gulp build:icons",
         "dev": "tsc --watch",
