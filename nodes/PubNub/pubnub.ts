@@ -14,9 +14,7 @@ import type { IHttpRequestOptions } from 'n8n-workflow';
 // Types
 type HttpHelper = (requestOptions: IHttpRequestOptions) => Promise<unknown>;
 
-interface PubNubMessage {
-    [key: string]: unknown;
-}
+type PubNubMessage = string | number | boolean | null | PubNubMessage[] | { [key: string]: PubNubMessage };
 
 interface PubNubConfig {
     subscribeKey?: string;

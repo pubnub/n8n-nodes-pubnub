@@ -4,7 +4,7 @@
 // - - - - - - - - - - - - - - - - - - - - - - -
 // Features
 // - - - - - - - - - - - - - - - - - - - - - - -
-//  - Publish/Subscribe via REST API
+//  - Publish/Subscribe/Signal via REST API
 //  - Long-polling subscribe
 //  - Dedicated queue per channel for maximum performance
 //  - Uses n8n HTTP helpers for requests
@@ -15,9 +15,7 @@ import type { IHttpRequestOptions } from 'n8n-workflow';
 // Types
 type HttpHelper = (requestOptions: IHttpRequestOptions) => Promise<unknown>;
 
-interface PubNubMessage {
-    [key: string]: unknown;
-}
+type PubNubMessage = string | number | boolean | null | PubNubMessage[] | { [key: string]: PubNubMessage };
 
 interface PubNubConfig {
     subscribeKey?: string;
