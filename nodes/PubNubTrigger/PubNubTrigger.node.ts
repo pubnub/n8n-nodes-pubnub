@@ -160,26 +160,23 @@ export class PubNubTrigger implements INodeType {
 
         // Subscribe to each channel
         // Store subscriptions for cleanup
-        const subscriptions: Array<{ unsubscribe: () => void; messages: (handler: (message: unknown) => void) => void }> = [];
+        const subscriptions: Array<ReturnType<typeof pubnub.subscribe>> = [];
 
         for (const channel of channels) {
             const subscription = pubnub.subscribe({
                 channel,
                 filter: options.filterExpression || '',
                 timetoken: options.timetoken || '0',
-                messages: (message: unknown) => {
+                messages: (message, meta) => {
                     // Handle messages based on trigger type
                     if (triggerOn === 'message' || triggerOn === 'both') {
-                        const msgData = message as { metadata?: Record<string, unknown> };
                         const workflowData = [
                             this.helpers.returnJsonArray({
                                 event: 'message',
                                 channel,
                                 message: message as IDataObject,
                                 timestamp: Date.now(),
-                                ...(options.includeMeta && msgData.metadata
-                                    ? { metadata: msgData.metadata }
-                                    : {}),
+                                ...(options.includeMeta && meta ? { metadata: meta as IDataObject } : {}),
                             }),
                         ];
                         this.emit(workflowData);
