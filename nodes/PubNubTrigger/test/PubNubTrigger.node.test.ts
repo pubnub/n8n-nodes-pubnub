@@ -132,21 +132,21 @@ describe('PubNubTrigger node', () => {
 		await response.closeFunction?.();
 	});
 
-	it('should include metadata only when includeMeta is enabled', async () => {
-		const msg = { text: 'hi', metadata: { k: 'v' } };
+	it('should include envelope metadata only when includeMeta is enabled', async () => {
+		const envelope = { d: { text: 'hi' }, u: { k: 'v' } };
 
 		let release = deferredFirstPoll();
 		let ctx = createContext({ triggerOn: 'message', channels: 'a', channelGroups: '', options: { includeMeta: true } });
 		let response = await node.trigger.call(ctx);
-		release({ t: { t: '1' }, m: [{ d: msg }] });
+		release({ t: { t: '1' }, m: [envelope] });
 		await new Promise((r) => setImmediate(r));
-		expect(firstPayload(ctx).metadata).toEqual({ k: 'v' });
+		expect(firstPayload(ctx)).toMatchObject({ message: { text: 'hi' }, metadata: { k: 'v' } });
 		await response.closeFunction?.();
 
 		release = deferredFirstPoll();
 		ctx = createContext({ triggerOn: 'message', channels: 'a', channelGroups: '', options: {} });
 		response = await node.trigger.call(ctx);
-		release({ t: { t: '1' }, m: [{ d: msg }] });
+		release({ t: { t: '1' }, m: [envelope] });
 		await new Promise((r) => setImmediate(r));
 		expect(firstPayload(ctx)).not.toHaveProperty('metadata');
 		await response.closeFunction?.();

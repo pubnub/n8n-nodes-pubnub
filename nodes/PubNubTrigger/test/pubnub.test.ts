@@ -68,13 +68,16 @@ describe('PubNub subscribe client', () => {
 		await flush();
 
 		expect(first).not.toHaveBeenCalled();
-		expect(second).toHaveBeenCalledWith('x');
+		expect(second).toHaveBeenCalledWith('x', undefined);
 		sub.unsubscribe();
 	});
 });
 
 describe('PubNub subscribe client error handling', () => {
-	it('should keep polling after timeouts and other errors', async () => {
+	afterEach(() => jest.useRealTimers());
+
+	it('should retry timeouts immediately and back off on other errors', async () => {
+		jest.useFakeTimers();
 		const received: unknown[] = [];
 		const timeout = Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
 		const socketTimeout = Object.assign(new Error('socket'), { code: 'ESOCKETTIMEDOUT' });
@@ -87,7 +90,13 @@ describe('PubNub subscribe client error handling', () => {
 			.mockImplementation(() => new Promise(() => {}));
 
 		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c', messages: (m) => received.push(m) });
-		for (let i = 0; i < 6; i++) await flush();
+		await jest.advanceTimersByTimeAsync(0);
+
+		// Both timeouts retried straight away; the generic error is now waiting out its backoff
+		expect(httpHelper).toHaveBeenCalledTimes(3);
+		await jest.advanceTimersByTimeAsync(999);
+		expect(httpHelper).toHaveBeenCalledTimes(3);
+		await jest.advanceTimersByTimeAsync(1);
 
 		expect(httpHelper).toHaveBeenCalledTimes(5);
 		expect(received).toEqual(['after-errors']);
@@ -95,6 +104,49 @@ describe('PubNub subscribe client error handling', () => {
 		expect(httpHelper.mock.calls[3][0].url).toContain('tt=0');
 		expect(httpHelper.mock.calls[4][0].url).toContain('tt=9');
 		sub.unsubscribe();
+	});
+
+	it('should grow the backoff exponentially up to 30s and reset after a success', async () => {
+		jest.useFakeTimers();
+		const httpHelper = jest.fn();
+		for (let i = 0; i < 7; i++) httpHelper.mockRejectedValueOnce(new Error('403'));
+		httpHelper
+			.mockResolvedValueOnce({ t: { t: '1' } })
+			.mockRejectedValueOnce(new Error('403'))
+			.mockImplementation(() => new Promise(() => {}));
+
+		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c' });
+		await jest.advanceTimersByTimeAsync(0);
+		expect(httpHelper).toHaveBeenCalledTimes(1);
+
+		// 1s, 2s, 4s, 8s, 16s, then capped at 30s
+		for (const [delay, calls] of [[1000, 2], [2000, 3], [4000, 4], [8000, 5], [16000, 6], [30000, 7]]) {
+			await jest.advanceTimersByTimeAsync(delay - 1);
+			expect(httpHelper).toHaveBeenCalledTimes(calls - 1);
+			await jest.advanceTimersByTimeAsync(1);
+			expect(httpHelper).toHaveBeenCalledTimes(calls);
+		}
+
+		// 7th failure is also capped at 30s, then the success polls again immediately
+		await jest.advanceTimersByTimeAsync(30000);
+		expect(httpHelper).toHaveBeenCalledTimes(9);
+		// The failure after a success starts again from 1s
+		await jest.advanceTimersByTimeAsync(1000);
+		expect(httpHelper).toHaveBeenCalledTimes(10);
+		sub.unsubscribe();
+	});
+
+	it('should cancel a pending backoff on unsubscribe', async () => {
+		jest.useFakeTimers();
+		const httpHelper = jest.fn().mockRejectedValue(new Error('403'));
+
+		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c' });
+		await jest.advanceTimersByTimeAsync(0);
+		sub.unsubscribe();
+
+		expect(jest.getTimerCount()).toBe(0);
+		await jest.advanceTimersByTimeAsync(60000);
+		expect(httpHelper).toHaveBeenCalledTimes(1);
 	});
 
 	it('should drop a response that arrives after unsubscribe', async () => {
@@ -156,6 +208,39 @@ describe('PubNub subscribe client error handling', () => {
 		const sub2 = PubNubClient({ httpHelper, origin: 'example.com' }).subscribe({ channel: 'a/b c' });
 		expect(httpHelper.mock.calls[1][0].url).toMatch(/^https:\/\/example\.com\/v2\/subscribe\/demo\/a%2Fb%20c\/0\?/);
 		sub2.unsubscribe();
+	});
+});
+
+describe('PubNub subscribe client delivery', () => {
+	it('should pass publish metadata from the envelope to the handler', async () => {
+		const handler = jest.fn();
+		const httpHelper = jest
+			.fn()
+			.mockResolvedValueOnce({ t: { t: '1' }, m: [{ d: 'a', u: { k: 'v' } }, { d: 'b' }] })
+			.mockImplementation(() => new Promise(() => {}));
+
+		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c', messages: handler });
+		await flush();
+
+		expect(handler.mock.calls).toEqual([
+			['a', { k: 'v' }],
+			['b', undefined],
+		]);
+		sub.unsubscribe();
+	});
+
+	it('should be async-iterable', async () => {
+		const httpHelper = jest
+			.fn()
+			.mockResolvedValueOnce({ t: { t: '1' }, m: [{ d: 'first' }] })
+			.mockImplementation(() => new Promise(() => {}));
+		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c' });
+
+		for await (const message of sub) {
+			expect(message).toBe('first');
+			break;
+		}
+		sub.unsubscribe();
 	});
 });
 

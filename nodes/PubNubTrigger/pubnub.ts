@@ -17,6 +17,10 @@ type HttpHelper = (requestOptions: IHttpRequestOptions) => Promise<unknown>;
 
 type PubNubMessage = string | number | boolean | null | PubNubMessage[] | { [key: string]: PubNubMessage };
 
+// Publish metadata delivered alongside a message (the `u` field of the subscribe envelope)
+type PubNubMeta = Record<string, unknown>;
+type MessageHandler = (message: PubNubMessage, meta?: PubNubMeta) => void;
+
 interface PubNubConfig {
     subscribeKey?: string;
     publishKey?: string;
@@ -24,7 +28,7 @@ interface PubNubConfig {
     origin?: string;
     userId?: string;
     authKey?: string;
-    messages?: (message: PubNubMessage) => void;
+    messages?: MessageHandler;
     filter?: string;
     timetoken?: string;
     message?: unknown;
@@ -33,7 +37,7 @@ interface PubNubConfig {
 }
 
 interface PubNubSubscription {
-    messages: (receiver: (message: PubNubMessage) => void) => void;
+    messages: (receiver: MessageHandler) => void;
     unsubscribe: () => void;
     [Symbol.asyncIterator](): AsyncIterator<PubNubMessage>;
 }
@@ -48,7 +52,7 @@ interface PubNubInstance {
     origin?: string;
     userId?: string;
     authKey?: string;
-    messages?: (message: PubNubMessage) => void;
+    messages?: MessageHandler;
     filter?: string;
     metadata?: Record<string, unknown>;
     httpHelper?: HttpHelper;
@@ -76,6 +80,10 @@ const defaultUserId = 'user-default';
 const defaultAuthKey = 'user-default';
 const defaultOrigin = 'ps.pndsn.com';
 
+// Backoff between retries after a failed subscribe request (timeouts excluded)
+const retryBaseDelayMs = 1000;
+const retryMaxDelayMs = 30000;
+
 function PubNubSubscribe(this: PubNubInstance, setup: PubNubConfig = {}): PubNubSubscription {
     const subkey = setup.subscribeKey || this.subscribeKey || defaultSubkey;
     const channel = setup.channel || this.channel || defaultChannel;
@@ -83,7 +91,7 @@ function PubNubSubscribe(this: PubNubInstance, setup: PubNubConfig = {}): PubNub
     const uuid = setup.userId || this.userId || defaultUserId;
     const authkey = setup.authKey || this.authKey || defaultAuthKey;
     const httpHelper = setup.httpHelper || this.httpHelper;
-    let messages = setup.messages || this.messages || ((_m: PubNubMessage) => {});
+    let messages: MessageHandler = setup.messages || this.messages || (() => {});
     const filter = setup.filter || this.filter || '';
     let timetoken = setup.timetoken || '0';
     let region = '';
@@ -98,17 +106,34 @@ function PubNubSubscribe(this: PubNubInstance, setup: PubNubConfig = {}): PubNub
     let receiver = promissory();
     let subscribed = true;
     let aborted = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let wakeRetry: (() => void) | null = null;
 
     // Start long-polling
     startLongPoll();
 
+    // Resolves after `ms`, or immediately when the subscription is cancelled
+    function wait(ms: number) {
+        return new Promise<void>((resolve) => {
+            wakeRetry = resolve;
+            retryTimer = setTimeout(resolve, ms);
+        }).finally(() => {
+            retryTimer = null;
+            wakeRetry = null;
+        });
+    }
+
     async function startLongPoll() {
+        let failures = 0;
         while (subscribed && !aborted) {
             try {
                 await poll();
+                failures = 0;
             } catch {
                 if (!subscribed || aborted) break;
-                // Retry immediately on error - the HTTP timeout parameter handles request timeouts
+                // Exponential backoff so persistent errors (e.g. 403) don't hammer the API
+                await wait(Math.min(retryBaseDelayMs * 2 ** failures, retryMaxDelayMs));
+                failures++;
             }
         }
     }
@@ -142,7 +167,7 @@ function PubNubSubscribe(this: PubNubInstance, setup: PubNubConfig = {}): PubNub
                 method: 'GET',
                 json: true,
                 timeout: 310000, // 310 seconds to allow for long-polling (PubNub default is 300s)
-            }) as { t?: { t?: string; r?: number }; m?: Array<{ d: PubNubMessage }> };
+            }) as { t?: { t?: string; r?: number }; m?: Array<{ d: PubNubMessage; u?: PubNubMeta }> };
 
             if (!subscribed || aborted) return;
 
@@ -158,9 +183,9 @@ function PubNubSubscribe(this: PubNubInstance, setup: PubNubConfig = {}): PubNub
 
                 // Process messages
                 if (response.m && Array.isArray(response.m)) {
-                    response.m.forEach((msgEnvelope: { d: PubNubMessage }) => {
+                    response.m.forEach((msgEnvelope) => {
                         const message = msgEnvelope.d;
-                        messages(message);
+                        messages(message, msgEnvelope.u);
                         if (resolver) {
                             resolver(message);
                         }
@@ -178,7 +203,7 @@ function PubNubSubscribe(this: PubNubInstance, setup: PubNubConfig = {}): PubNub
                 return;
             }
 
-            // For other errors, wait before retrying
+            // For other errors, let startLongPoll back off before retrying
             throw error;
         }
     }
@@ -191,14 +216,16 @@ function PubNubSubscribe(this: PubNubInstance, setup: PubNubConfig = {}): PubNub
     }
 
     const generator = subscription();
-    const iterator = {
-        ...generator,
-        messages: (receiver: (message: PubNubMessage) => void) => (messages = receiver),
+    const iterator: PubNubSubscription = {
+        [Symbol.asyncIterator]: () => generator,
+        messages: (receiver: MessageHandler) => (messages = receiver),
         unsubscribe: () => {
             subscribed = false;
             aborted = true;
+            if (retryTimer) clearTimeout(retryTimer);
+            wakeRetry?.();
         },
-    } as PubNubSubscription;
+    };
 
     // Return Async Generator Iterator
     return iterator;
