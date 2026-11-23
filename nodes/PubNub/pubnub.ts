@@ -107,7 +107,7 @@ async function PubNubPublish(this: PubNubInstance, setup: PubNubConfig = {}): Pr
         });
 
         return response;
-    } catch (e) {
+    } catch {
         return false;
     }
 }
@@ -148,7 +148,7 @@ async function PubNubSignal(this: PubNubInstance, setup: PubNubConfig = {}): Pro
         });
 
         return response;
-    } catch (e) {
+    } catch {
         return false;
     }
 }

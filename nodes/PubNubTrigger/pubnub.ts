@@ -106,7 +106,7 @@ function PubNubSubscribe(this: PubNubInstance, setup: PubNubConfig = {}): PubNub
         while (subscribed && !aborted) {
             try {
                 await poll();
-            } catch (e) {
+            } catch {
                 if (!subscribed || aborted) break;
                 // Retry immediately on error - the HTTP timeout parameter handles request timeouts
             }
@@ -244,7 +244,7 @@ async function PubNubPublish(this: PubNubInstance, setup: PubNubConfig = {}): Pr
         });
 
         return response;
-    } catch (e) {
+    } catch {
         return false;
     }
 }
@@ -285,7 +285,7 @@ async function PubNubSignal(this: PubNubInstance, setup: PubNubConfig = {}): Pro
         });
 
         return response;
-    } catch (e) {
+    } catch {
         return false;
     }
 }
