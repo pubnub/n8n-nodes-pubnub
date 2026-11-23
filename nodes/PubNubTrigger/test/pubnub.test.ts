@@ -72,3 +72,152 @@ describe('PubNub subscribe client', () => {
 		sub.unsubscribe();
 	});
 });
+
+describe('PubNub subscribe client error handling', () => {
+	it('should keep polling after timeouts and other errors', async () => {
+		const received: unknown[] = [];
+		const timeout = Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
+		const socketTimeout = Object.assign(new Error('socket'), { code: 'ESOCKETTIMEDOUT' });
+		const httpHelper = jest
+			.fn()
+			.mockRejectedValueOnce(timeout)
+			.mockRejectedValueOnce(socketTimeout)
+			.mockRejectedValueOnce(new Error('boom'))
+			.mockResolvedValueOnce({ t: { t: '9' }, m: [{ d: 'after-errors' }] })
+			.mockImplementation(() => new Promise(() => {}));
+
+		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c', messages: (m) => received.push(m) });
+		for (let i = 0; i < 6; i++) await flush();
+
+		expect(httpHelper).toHaveBeenCalledTimes(5);
+		expect(received).toEqual(['after-errors']);
+		// Errors must not advance the timetoken
+		expect(httpHelper.mock.calls[3][0].url).toContain('tt=0');
+		expect(httpHelper.mock.calls[4][0].url).toContain('tt=9');
+		sub.unsubscribe();
+	});
+
+	it('should drop a response that arrives after unsubscribe', async () => {
+		const handler = jest.fn();
+		let release: (v: unknown) => void = () => {};
+		const httpHelper = jest.fn().mockImplementationOnce(() => new Promise((r) => (release = r)));
+
+		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c', messages: handler });
+		sub.unsubscribe();
+		release({ t: { t: '1' }, m: [{ d: 'late' }] });
+		await flush();
+
+		expect(handler).not.toHaveBeenCalled();
+		expect(httpHelper).toHaveBeenCalledTimes(1);
+	});
+
+	it('should stop retrying when a request fails after unsubscribe', async () => {
+		let fail: (e: unknown) => void = () => {};
+		const httpHelper = jest.fn().mockImplementationOnce(() => new Promise((_r, reject) => (fail = reject)));
+
+		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c' });
+		sub.unsubscribe();
+		fail(new Error('aborted'));
+		await flush();
+		await flush();
+
+		expect(httpHelper).toHaveBeenCalledTimes(1);
+	});
+
+	it('should ignore empty or malformed responses without losing the timetoken', async () => {
+		const handler = jest.fn();
+		const httpHelper = jest
+			.fn()
+			.mockResolvedValueOnce({ t: { t: '7' } })
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce({ t: {}, m: 'not-an-array' })
+			.mockImplementation(() => new Promise(() => {}));
+
+		const sub = PubNubClient({ httpHelper }).subscribe({ channel: 'c', messages: handler });
+		for (let i = 0; i < 4; i++) await flush();
+
+		expect(handler).not.toHaveBeenCalled();
+		expect(httpHelper.mock.calls[3][0].url).toContain('tt=7');
+		expect(httpHelper.mock.calls[3][0].url).not.toContain('tr=');
+		sub.unsubscribe();
+	});
+
+	it('should fall back to defaults and encode the channel', async () => {
+		const httpHelper = jest.fn().mockImplementation(() => new Promise(() => {}));
+		const sub = PubNubClient({ httpHelper }).subscribe();
+
+		expect(httpHelper.mock.calls[0][0]).toMatchObject({
+			url: 'https://ps.pndsn.com/v2/subscribe/demo/pubnub/0?uuid=user-default&tt=0&auth=user-default',
+			method: 'GET',
+			json: true,
+		});
+		sub.unsubscribe();
+
+		const sub2 = PubNubClient({ httpHelper, origin: 'example.com' }).subscribe({ channel: 'a/b c' });
+		expect(httpHelper.mock.calls[1][0].url).toMatch(/^https:\/\/example\.com\/v2\/subscribe\/demo\/a%2Fb%20c\/0\?/);
+		sub2.unsubscribe();
+	});
+});
+
+describe('PubNub trigger client publish', () => {
+	it('should POST the message with encoded params and meta', async () => {
+		const httpHelper = jest.fn().mockResolvedValue([1, 'Sent', '123']);
+		const client = PubNubClient({ publishKey: 'pub', subscribeKey: 'sub', userId: 'u 1', authKey: 'a&b', httpHelper });
+
+		const result = await client.publish({ channel: 'ch/1', message: { hi: 1 }, metadata: { k: 'v' } });
+
+		expect(result).toEqual([1, 'Sent', '123']);
+		expect(httpHelper).toHaveBeenCalledWith({
+			url: `https://ps.pndsn.com/publish/pub/sub/0/ch%2F1/0?uuid=u%201&auth=a%26b&meta=${encodeURIComponent('{"k":"v"}')}`,
+			method: 'POST',
+			body: { hi: 1 },
+			json: true,
+		});
+	});
+
+	it('should use defaults and omit empty meta', async () => {
+		const httpHelper = jest.fn().mockResolvedValue('ok');
+		await PubNubClient({ httpHelper }).publish();
+
+		expect(httpHelper.mock.calls[0][0]).toMatchObject({
+			url: 'https://ps.pndsn.com/publish/demo/demo/0/pubnub/0?uuid=user-default&auth=user-default',
+			body: 'missing-message',
+		});
+	});
+
+	it('should return false when the request fails', async () => {
+		const httpHelper = jest.fn().mockRejectedValue(new Error('403'));
+		await expect(PubNubClient({ httpHelper }).publish({ message: 'x' })).resolves.toBe(false);
+	});
+
+	it('should throw without an http helper', async () => {
+		await expect(PubNubClient({}).publish({ message: 'x' })).rejects.toThrow('HTTP helper is required');
+	});
+});
+
+describe('PubNub trigger client signal', () => {
+	it('should GET with the payload truncated to 30 chars and encoded', async () => {
+		const httpHelper = jest.fn().mockResolvedValue([1, 'Sent', '1']);
+		const long = 'a b/'.repeat(10); // 40 chars
+		const result = await PubNubClient({ publishKey: 'p', subscribeKey: 's', httpHelper }).signal({
+			channel: 'c',
+			message: long,
+		});
+
+		expect(result).toEqual([1, 'Sent', '1']);
+		expect(httpHelper).toHaveBeenCalledWith({
+			url: `https://ps.pndsn.com/signal/p/s/0/c/0/${encodeURIComponent(long.substring(0, 30))}?uuid=user-default&auth=user-default`,
+			method: 'GET',
+			json: true,
+		});
+	});
+
+	it('should return false when the request fails', async () => {
+		const httpHelper = jest.fn().mockRejectedValue(new Error('nope'));
+		await expect(PubNubClient({ httpHelper }).signal({ message: 'x' })).resolves.toBe(false);
+	});
+
+	it('should throw without an http helper', async () => {
+		await expect(PubNubClient({}).signal({ message: 'x' })).rejects.toThrow('HTTP helper is required');
+	});
+});
